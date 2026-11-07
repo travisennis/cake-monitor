@@ -487,10 +487,11 @@ func runDoctor(stdout, stderr io.Writer) int {
   "version": 1,
   "hooks": {
     "PreToolUse": [{"hooks": [{"type": "command", "command": %q, "timeout": 5}]}],
-    "SessionStart": [{"hooks": [{"type": "command", "command": %q, "timeout": 5}]}]
+    "SessionStart": [{"hooks": [{"type": "command", "command": %q, "timeout": 5}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": %q, "timeout": 5}]}]
   }
 }
-`, executable+" hook", executable+" hook")
+`, executable+" hook", executable+" hook", executable+" hook")
 	return 0
 }
 

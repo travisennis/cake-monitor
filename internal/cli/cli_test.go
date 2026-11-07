@@ -156,6 +156,21 @@ func TestHookIgnoresAnotherSessionsEvents(t *testing.T) {
 	}
 }
 
+func TestDoctorPrintsEveryHookChannel(t *testing.T) {
+	testRoot(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"doctor"}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, stderr = %s", code, stderr.String())
+	}
+	for _, event := range []string{"PreToolUse", "SessionStart", "Stop"} {
+		if !strings.Contains(stdout.String(), `"`+event+`"`) {
+			t.Fatalf("doctor output has no %s hook:\n%s", event, stdout.String())
+		}
+	}
+}
+
 func TestReadJSONReportsRemaining(t *testing.T) {
 	root := testRoot(t)
 	seedEvent(t, root, "", "one")
