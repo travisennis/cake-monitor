@@ -372,7 +372,7 @@ func runHook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "cake-monitor: %v\n", err)
 		return 1
 	}
-	return printJSON(stdout, hookio.Result(items, dropped), stderr)
+	return printJSON(stdout, hookio.Result(payload, items, dropped), stderr)
 }
 
 func runWatch(args []string, stdout, stderr io.Writer) int {

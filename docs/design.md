@@ -21,15 +21,14 @@ and Cake reads them at a boundary it already has.
 | --- | --- | --- | --- |
 | Turn start | `SessionStart` / `UserPromptSubmit` `additional_context` | `src/main.rs` `prepare_agent_turn`, `append_developer_context` | developer message |
 | Each tool call | `PreToolUse` / `PostToolUse` `additional_context` | `src/hooks.rs`, appended to the tool result | tool result text |
-| Turn end | `Stop` `additional_context` | computed, then only logged | none |
+| Turn end | `Stop` `additional_context` + `follow_up` | `src/main.rs` follow-up loop, `src/hooks.rs` | one extra request (synthetic user message) |
 | Model asks | `tb__monitor_read` | toolbox protocol | tool result text |
 | Front end | `cake-monitor watch --json` | outside Cake | NDJSON |
 
-The first two are push: Cake injects the text without the model asking. The wait
-they replace is zero — the hook reads files and exits.
-
-Nothing can deliver to a Cake process that has exited. That is a property of the
-process model, not a missing hook.
+The first three are push: the model receives the text without asking. The wait
+they replace is zero — the hook reads files and exits. The turn-end channel opens
+one extra request in the same invocation instead of injecting into the turn that
+just ended, so it still cannot help a process that exited.
 
 ## Watch lifecycle
 
@@ -91,14 +90,15 @@ are pruned oldest-first and counted, so the bound is visible rather than silent.
 
 ## What would make it proactive
 
-1. **Cake: `Stop` context starts one bounded follow-up turn.** Cake already
-   computes the value (`src/main.rs`); making it open a turn instead of logging it
-   would let a monitor extend an agent loop without the model asking. It still
-   cannot help a process that exited.
+1. **Cake: `Stop` context starts one bounded follow-up turn.** Delivered: Cake
+   `445873c` (ADR 054) opens one extra request when a `Stop` result sets
+   `follow_up: true`, and `cake-monitor`'s hook now requests it. The cap is
+   core-owned: one follow-up per invocation, none under `--output-schema`. It
+   still cannot help a process that exited.
 2. **cake-repl: consume `watch --json`.** The REPL owns the turn loop. Reading the
    NDJSON stream would let it start a turn on an event while idle and queue the
    event while busy — the only design where "CI went green while I was away"
    reaches the user without typing a prompt.
 
-Both are separate slices in their own projects; neither is required for the
-toolbox and hook channels above.
+Item 2 is a separate slice in cake-repl; it is not required for the toolbox and
+hook channels above.

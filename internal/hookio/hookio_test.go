@@ -25,8 +25,40 @@ func TestFormatEmpty(t *testing.T) {
 	if got := Format(nil, 0); got != "" {
 		t.Fatalf("Format(nil) = %q, want empty", got)
 	}
-	if len(Result(nil, 0)) != 0 {
+	if len(Result(Payload{}, nil, 0)) != 0 {
 		t.Fatal("Result(nil) should be an empty document")
+	}
+}
+
+func TestResultRequestsFollowUpOnlyOnStop(t *testing.T) {
+	items := []store.Item{item("ci", "build failed")}
+
+	stop := Result(Payload{HookEventName: "Stop"}, items, 0)
+	followUp, ok := stop["follow_up"].(bool)
+	if !ok || !followUp {
+		t.Fatalf("Stop follow_up = %v, want true", stop["follow_up"])
+	}
+	context, ok := stop["additional_context"].(string)
+	if !ok || !strings.Contains(context, "build failed") {
+		t.Fatalf("Stop context = %q", context)
+	}
+
+	for _, event := range []string{"PreToolUse", "PostToolUse", "SessionStart", "UserPromptSubmit", ""} {
+		result := Result(Payload{HookEventName: event}, items, 0)
+		if _, ok := result["follow_up"]; ok {
+			t.Fatalf("%q result requested a follow-up: %v", event, result)
+		}
+		if _, ok := result["additional_context"]; !ok {
+			t.Fatalf("%q result has no context: %v", event, result)
+		}
+	}
+}
+
+func TestResultWithoutEventsIsEmpty(t *testing.T) {
+	for _, event := range []string{"Stop", "PreToolUse"} {
+		if result := Result(Payload{HookEventName: event}, nil, 0); len(result) != 0 {
+			t.Fatalf("%q result = %v, want empty", event, result)
+		}
 	}
 }
 
@@ -77,8 +109,8 @@ func TestFormatReportsDropped(t *testing.T) {
 }
 
 func TestReadPayload(t *testing.T) {
-	payload := ReadPayload(strings.NewReader(`{"event":"PreToolUse","session_id":"abc"}`))
-	if payload.SessionID != "abc" || payload.Event != "PreToolUse" {
+	payload := ReadPayload(strings.NewReader(`{"hook_event_name":"PreToolUse","session_id":"abc"}`))
+	if payload.SessionID != "abc" || payload.HookEventName != "PreToolUse" {
 		t.Fatalf("payload = %+v", payload)
 	}
 	if got := ReadPayload(strings.NewReader("not json")); got.SessionID != "" {

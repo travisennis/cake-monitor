@@ -51,14 +51,19 @@ func seedEvent(t *testing.T, root, session, line string) *store.Watch {
 }
 
 func TestHookWithoutEventsPrintsAnEmptyResult(t *testing.T) {
-	testRoot(t)
-	var stdout, stderr bytes.Buffer
-	code := Run([]string{"hook"}, strings.NewReader(`{"event":"PreToolUse","session_id":"s1"}`), &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("code = %d, stderr = %s", code, stderr.String())
-	}
-	if strings.TrimSpace(stdout.String()) != "{}" {
-		t.Fatalf("stdout = %q", stdout.String())
+	for _, event := range []string{"PreToolUse", "Stop"} {
+		t.Run(event, func(t *testing.T) {
+			testRoot(t)
+			var stdout, stderr bytes.Buffer
+			payload := fmt.Sprintf(`{"hook_event_name":%q,"session_id":"s1"}`, event)
+			code := Run([]string{"hook"}, strings.NewReader(payload), &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("code = %d, stderr = %s", code, stderr.String())
+			}
+			if strings.TrimSpace(stdout.String()) != "{}" {
+				t.Fatalf("stdout = %q", stdout.String())
+			}
+		})
 	}
 }
 
@@ -66,24 +71,27 @@ func TestHookDeliversSessionEventsAsAdditionalContext(t *testing.T) {
 	root := testRoot(t)
 	seedEvent(t, root, "s1", "build failed")
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"hook"}, strings.NewReader(`{"event":"PreToolUse","session_id":"s1"}`), &stdout, &stderr)
+	code := Run([]string{"hook"}, strings.NewReader(`{"hook_event_name":"PreToolUse","session_id":"s1"}`), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d, stderr = %s", code, stderr.String())
 	}
-	var result map[string]string
+	var result map[string]any
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("decode %q: %v", stdout.String(), err)
 	}
-	context, ok := result["additional_context"]
+	context, ok := result["additional_context"].(string)
 	if !ok {
 		t.Fatalf("no additional_context in %v", result)
 	}
 	if !strings.Contains(context, "build failed") {
 		t.Fatalf("context = %q", context)
 	}
+	if _, ok := result["follow_up"]; ok {
+		t.Fatalf("non-Stop result requested a follow-up: %v", result)
+	}
 	// A second hook call must not repeat the delivery.
 	stdout.Reset()
-	code = Run([]string{"hook"}, strings.NewReader(`{"event":"PostToolUse","session_id":"s1"}`), &stdout, &stderr)
+	code = Run([]string{"hook"}, strings.NewReader(`{"hook_event_name":"PostToolUse","session_id":"s1"}`), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("second code = %d", code)
 	}
@@ -92,11 +100,54 @@ func TestHookDeliversSessionEventsAsAdditionalContext(t *testing.T) {
 	}
 }
 
+func TestHookStopRequestsFollowUpTurn(t *testing.T) {
+	cases := []struct {
+		name    string
+		payload string
+	}{
+		{"without budget fields", `{"hook_event_name":"Stop","session_id":"s1"}`},
+		{"with budget fields", `{"hook_event_name":"Stop","session_id":"s1","follow_up_index":0,"max_follow_ups":1}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := testRoot(t)
+			seedEvent(t, root, "s1", "build failed")
+			var stdout, stderr bytes.Buffer
+			code := Run([]string{"hook"}, strings.NewReader(tc.payload), &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("code = %d, stderr = %s", code, stderr.String())
+			}
+			var result map[string]any
+			if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+				t.Fatalf("decode %q: %v", stdout.String(), err)
+			}
+			followUp, ok := result["follow_up"].(bool)
+			if !ok || !followUp {
+				t.Fatalf("follow_up = %v, want true in %v", result["follow_up"], result)
+			}
+			context, ok := result["additional_context"].(string)
+			if !ok || !strings.Contains(context, "build failed") {
+				t.Fatalf("context = %q", context)
+			}
+
+			// The drained event must not request another follow-up.
+			stdout.Reset()
+			code = Run([]string{"hook"}, strings.NewReader(tc.payload), &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("second code = %d, stderr = %s", code, stderr.String())
+			}
+			if strings.TrimSpace(stdout.String()) != "{}" {
+				t.Fatalf("second stdout = %q", stdout.String())
+			}
+		})
+	}
+}
+
 func TestHookIgnoresAnotherSessionsEvents(t *testing.T) {
 	root := testRoot(t)
 	seedEvent(t, root, "s2", "not yours")
 	var stdout, stderr bytes.Buffer
-	code := Run([]string{"hook"}, strings.NewReader(`{"session_id":"s1"}`), &stdout, &stderr)
+	code := Run([]string{"hook"}, strings.NewReader(`{"hook_event_name":"Stop","session_id":"s1"}`), &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("code = %d", code)
 	}

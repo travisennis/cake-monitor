@@ -2,8 +2,9 @@
 //
 // Cake appends a hook's `additional_context` to a tool result (PreToolUse,
 // PostToolUse) or to the turn's developer context (SessionStart,
-// UserPromptSubmit). That is the push channel: the model receives events
-// without asking for them and without any call blocking.
+// UserPromptSubmit). At Stop, a result may also set `follow_up` to start one
+// bounded follow-up turn in the same invocation. That is the push channel: the
+// model receives events without asking for them and without any call blocking.
 package hookio
 
 import (
@@ -20,10 +21,15 @@ import (
 // a wall of log lines would crowd out the work in progress.
 const MaxContextBytes = 2000
 
-// Payload is the subset of cake's hook input this adapter uses.
+// eventStop is the Cake hook event that ends a turn. Cake may start one bounded
+// follow-up turn when a Stop result asks for it.
+const eventStop = "Stop"
+
+// Payload is the subset of cake's hook input this adapter uses. Cake names the
+// event field `hook_event_name` in every hook payload.
 type Payload struct {
-	Event     string `json:"event"`
-	SessionID string `json:"session_id"`
+	HookEventName string `json:"hook_event_name"`
+	SessionID     string `json:"session_id"`
 }
 
 // ReadPayload decodes cake's hook input, tolerating anything unexpected: an
@@ -70,12 +76,20 @@ func Format(items []store.Item, dropped int) string {
 }
 
 // Result is the hook's stdout document. An empty map is a valid no-op result.
-func Result(items []store.Item, dropped int) map[string]string {
+// At Stop, a non-empty result also asks Cake for a follow-up turn so pending
+// events drive the next request instead of waiting for a new prompt. Cake owns
+// the cap: it ignores the request when the budget is exhausted or the run has
+// an output schema.
+func Result(payload Payload, items []store.Item, dropped int) map[string]any {
 	context := Format(items, dropped)
 	if context == "" {
-		return map[string]string{}
+		return map[string]any{}
 	}
-	return map[string]string{"additional_context": context}
+	result := map[string]any{"additional_context": context}
+	if payload.HookEventName == eventStop {
+		result["follow_up"] = true
+	}
+	return result
 }
 
 func oneLine(text string) string {

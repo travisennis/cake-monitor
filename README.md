@@ -10,13 +10,14 @@ prompt, no commands, nothing until the wait ends. `cake-monitor` removes the wai
 instead of shortening it.
 
 A watch is a detached process that records matching output to disk. Cake learns
-about recorded events in three ways, none of which waits:
+about recorded events in four ways, none of which waits:
 
 | Channel | When it delivers | Configuration |
 | --- | --- | --- |
 | `tb__monitor_read` | Whenever the model asks | Toolbox symlinks |
 | `PreToolUse` hook `additional_context` | Appended to the next tool result | `hooks.json` |
 | `SessionStart` / `UserPromptSubmit` hook `additional_context` | Appended to the next turn's developer context | `hooks.json` |
+| `Stop` hook `additional_context` + `follow_up` | Starts one bounded follow-up turn in the same invocation | `hooks.json` |
 
 `cake-monitor watch --json` streams new events as NDJSON for a front end that
 owns the turn loop. That is how a future `cake-repl` integration reports an
@@ -59,6 +60,11 @@ prints):
       { "hooks": [
         { "type": "command", "command": "/Users/you/go/bin/cake-monitor hook", "timeout": 5 }
       ] }
+    ],
+    "Stop": [
+      { "hooks": [
+        { "type": "command", "command": "/Users/you/go/bin/cake-monitor hook", "timeout": 5 }
+      ] }
     ]
   }
 }
@@ -66,8 +72,12 @@ prints):
 
 The hook drains only events scoped to the session in its payload, plus watches
 with no session scope. A watch started by a tool call inherits the session from
-`CAKE_THREAD_ID`, so it delivers only to that session. `PostToolUse` works too;
-`Stop` output is currently logged but not injected by Cake.
+`CAKE_THREAD_ID`, so it delivers only to that session. `PostToolUse` works too.
+A `Stop` result sets `follow_up: true`, so Cake runs one bounded follow-up turn
+with the events as context instead of ending the invocation (Cake `445873c`,
+ADR 054). Cake owns the cap: one follow-up per invocation, and none when the run
+uses `--output-schema`. Events that arrive during that turn wait for the next
+delivery.
 
 ## Use
 
