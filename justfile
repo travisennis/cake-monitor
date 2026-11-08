@@ -15,8 +15,10 @@ build:
 version-check: build
     ./dist/cake-monitor -version | grep -q '^revision '
 
+# Build, install the CLI, and link the four toolbox tools.
 install: build
     go install -trimpath ./cmd/cake-monitor
+    ./dist/cake-monitor install-tools
 
 # Link the four toolbox names into cake's global toolbox directory.
 install-tools: build

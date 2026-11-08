@@ -30,14 +30,14 @@ git clone git@github.com:travisennis/cake-monitor.git ~/Projects/cake/cake-monit
 cd ~/Projects/cake/cake-monitor
 just hooks         # conventional-commit hook
 just ci
-just install       # go install the CLI
-just install-tools # link the four toolbox tools into cake
+just install       # go install the CLI and link the four toolbox tools
 just doctor
 ```
 
-`just install-tools` symlinks `monitor_start`, `monitor_list`, `monitor_read`,
+`just install` symlinks `monitor_start`, `monitor_list`, `monitor_read`,
 and `monitor_stop` into `${XDG_CONFIG_HOME:-$HOME/.config}/cake/tools`, all
-pointing at `dist/cake-monitor`. Cake follows symlinks during discovery and
+pointing at `dist/cake-monitor`. `just install-tools` re-links them without
+reinstalling the CLI. Cake follows symlinks during discovery and
 registers them as `tb__monitor_start` and so on. If you keep an explicit
 `[tools] enabled` list in `~/.config/cake/settings.toml`, add all four names.
 Under `--sandbox read-only` Cake skips toolbox discovery entirely.
